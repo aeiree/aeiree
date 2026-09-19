@@ -64,33 +64,33 @@ class Theme:
 
 DARK = Theme(
     name="dark",
-    page="#070b12",
-    panel="#0d131f",
-    panel_alt="#111a28",
-    border="#273449",
-    text="#e8eef8",
-    muted="#91a1b8",
-    faint="#3c4a60",
-    label="#f7b37f",
-    success="#34d399",
-    warning="#fbbf24",
-    danger="#fb7185",
+    page="#1b1b22",
+    panel="#22232d",
+    panel_alt="#292f3e",
+    border="#485364",
+    text="#d9e3f2",
+    muted="#8f9db3",
+    faint="#34445d",
+    label="#a8b7d2",
+    success="#a8b7d2",
+    warning="#68768c",
+    danger="#485364",
     shadow_opacity=0.46,
 )
 
 LIGHT = Theme(
     name="light",
-    page="#eef2f6",
-    panel="#ffffff",
-    panel_alt="#f8fafc",
-    border="#d7dee8",
-    text="#172033",
-    muted="#607088",
-    faint="#c2ccd9",
-    label="#b45309",
-    success="#047857",
-    warning="#b45309",
-    danger="#e11d48",
+    page="#e8edf4",
+    panel="#f8fafc",
+    panel_alt="#eef2f7",
+    border="#c7d0dd",
+    text="#25242a",
+    muted="#68768c",
+    faint="#d5dce6",
+    label="#485364",
+    success="#34445d",
+    warning="#68768c",
+    danger="#8f9db3",
     shadow_opacity=0.14,
 )
 
@@ -1358,8 +1358,12 @@ def render_svg(
     accent = parse_hex(theme_config.get("accent"), "#f97316")
     accent_2 = parse_hex(theme_config.get("accent_2"), "#14b8a6")
     if theme.name == "light":
-        accent = rgb_to_hex(mix(hex_to_rgb(accent), (20, 27, 40), 0.13))
+        accent = rgb_to_hex(mix(hex_to_rgb(accent), (20, 27, 40), 0.45))
         accent_2 = rgb_to_hex(mix(hex_to_rgb(accent_2), (20, 27, 40), 0.23))
+    else:
+        accent_2 = rgb_to_hex(
+            mix(hex_to_rgb(accent_2), hex_to_rgb(theme.text), 0.25)
+        )
 
     sections = [
         (

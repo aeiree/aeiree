@@ -98,8 +98,9 @@ display:
   avatar_cache_path: "assets/avatar.png"
 
 theme:
-  accent: "#f97316"
-  accent_2: "#14b8a6"
+  # Sampled from the current blue-gray profile portrait.
+  accent: "#a8b7d2"
+  accent_2: "#68768c"
 
 preview:
   # Used by --offline mode only.

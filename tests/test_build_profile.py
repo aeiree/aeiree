@@ -171,6 +171,33 @@ class ReadmeRenderingTests(unittest.TestCase):
 
 
 class AvatarRenderingTests(unittest.TestCase):
+    def test_card_palette_uses_the_avatar_blue_gray_colors(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        config = yaml.safe_load(
+            (repository_root / "profile.template.yml").read_text(encoding="utf-8")
+        )
+
+        self.assertEqual("#a8b7d2", config["theme"]["accent"])
+        self.assertEqual("#68768c", config["theme"]["accent_2"])
+        self.assertEqual("#1b1b22", build_profile.DARK.page)
+        self.assertEqual("#292f3e", build_profile.DARK.panel_alt)
+        self.assertEqual("#a8b7d2", build_profile.DARK.label)
+        self.assertEqual("#eef2f7", build_profile.LIGHT.panel_alt)
+        self.assertEqual("#485364", build_profile.LIGHT.label)
+
+        profile, stats, _fixture_config = profile_fixture()
+        avatar_uri = build_profile.avatar_data_uri(Image.new("RGB", (8, 8), "red"))
+        dark_svg = build_profile.render_svg(
+            build_profile.DARK, profile, stats, config, avatar_uri
+        )
+        light_svg = build_profile.render_svg(
+            build_profile.LIGHT, profile, stats, config, avatar_uri
+        )
+
+        self.assertIn("#8491a6", dark_svg)
+        self.assertIn("#657186", light_svg)
+        self.assertIn("#556175", light_svg)
+
     def test_generator_embeds_the_full_color_avatar_in_the_svg(self) -> None:
         repository_root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as directory:
