@@ -4,7 +4,6 @@
 Outputs:
     README.md
   assets/profile-terminal-dark.svg
-  assets/profile-terminal-light.svg
 
 The hosted workflow discovers the username from GITHUB_REPOSITORY_OWNER, reads
 public GitHub profile data, embeds the current avatar in themed SVG cards, and
@@ -15,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import colorsys
 import json
 import hashlib
 import html
@@ -62,36 +62,27 @@ class Theme:
     shadow_opacity: float
 
 
+@dataclass(frozen=True)
+class CardPalette:
+    accent: str
+    accent_2: str
+    source: str
+
+
 DARK = Theme(
     name="dark",
-    page="#1b1b22",
-    panel="#22232d",
-    panel_alt="#292f3e",
-    border="#485364",
-    text="#d9e3f2",
-    muted="#8f9db3",
-    faint="#34445d",
-    label="#a8b7d2",
-    success="#a8b7d2",
-    warning="#68768c",
-    danger="#485364",
+    page="#0d1117",
+    panel="#161b22",
+    panel_alt="#1f2630",
+    border="#30363d",
+    text="#f0f3f6",
+    muted="#8b949e",
+    faint="#30363d",
+    label="#c9d1d9",
+    success="#c9d1d9",
+    warning="#8b949e",
+    danger="#59636e",
     shadow_opacity=0.46,
-)
-
-LIGHT = Theme(
-    name="light",
-    page="#e8edf4",
-    panel="#f8fafc",
-    panel_alt="#eef2f7",
-    border="#c7d0dd",
-    text="#25242a",
-    muted="#68768c",
-    faint="#d5dce6",
-    label="#485364",
-    success="#34445d",
-    warning="#68768c",
-    danger="#8f9db3",
-    shadow_opacity=0.14,
 )
 
 
@@ -149,6 +140,52 @@ def mix(a: tuple[int, int, int], b: tuple[int, int, int], amount: float) -> tupl
     return tuple(round(x * (1 - amount) + y * amount) for x, y in zip(a, b))  # type: ignore[return-value]
 
 
+def color_distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
+    """Return normalized RGB distance in the inclusive range 0..1."""
+    return sum((left - right) ** 2 for left, right in zip(a, b)) ** 0.5 / 441.67295593
+
+
+def _relative_luminance(color: tuple[int, int, int]) -> float:
+    channels = []
+    for channel in color:
+        value = channel / 255
+        channels.append(value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def contrast_ratio(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
+    lighter, darker = sorted((_relative_luminance(a), _relative_luminance(b)), reverse=True)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def _ensure_contrast(
+    color: tuple[int, int, int],
+    background: tuple[int, int, int],
+    minimum: float,
+    target: tuple[int, int, int],
+) -> tuple[int, int, int]:
+    if contrast_ratio(color, background) >= minimum:
+        return color
+    for step in range(1, 101):
+        candidate = mix(color, target, step / 100)
+        if contrast_ratio(candidate, background) >= minimum:
+            return candidate
+    return target
+
+
+def _tone(
+    color: tuple[int, int, int],
+    lightness: float,
+    saturation_scale: float,
+    saturation_cap: float,
+) -> str:
+    red, green, blue = (channel / 255 for channel in color)
+    hue, _source_lightness, saturation = colorsys.rgb_to_hls(red, green, blue)
+    saturation = min(saturation * saturation_scale, saturation_cap)
+    result = colorsys.hls_to_rgb(hue, clamp(lightness, 0, 1), saturation)
+    return rgb_to_hex(channel * 255 for channel in result)
+
+
 def load_config(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"Missing configuration file: {path}")
@@ -177,6 +214,7 @@ def validate_config(config: Mapping[str, Any], config_path: Path) -> None:
     sections_config = expect_mapping("sections") or {}
     uptime_config = expect_mapping("uptime") or {}
     display_config = expect_mapping("display") or {}
+    theme_config = expect_mapping("theme") or {}
 
     additional_fields = profile_config.get("additional_fields")
     if additional_fields is not None:
@@ -223,6 +261,10 @@ def validate_config(config: Mapping[str, Any], config_path: Path) -> None:
     stack_config = sections_config.get("stack")
     if stack_config is not None and not isinstance(stack_config, dict):
         issues.append("sections.stack must be a mapping of labels to text.")
+
+    palette_source = str(theme_config.get("palette") or "fixed").strip().lower()
+    if palette_source not in {"avatar", "fixed"}:
+        issues.append("theme.palette must be either avatar or fixed.")
 
     if issues:
         formatted = "\n".join(f"- {issue}" for issue in issues)
@@ -1168,6 +1210,114 @@ def avatar_data_uri(image: Image.Image) -> str:
     return f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode('ascii')}"
 
 
+def avatar_palette(image: Image.Image) -> CardPalette:
+    """Extract two supported colors while ignoring one-off background speckles."""
+    sample = image.convert("RGB")
+    sample.thumbnail((96, 96), Image.Resampling.LANCZOS)
+    quantized = sample.quantize(colors=16, method=Image.Quantize.MEDIANCUT)
+    color_counts = quantized.getcolors(maxcolors=16) or []
+    color_table = quantized.getpalette() or []
+    total = max(1, sum(count for count, _index in color_counts))
+
+    candidates: list[tuple[int, tuple[int, int, int], float, float, float]] = []
+    for count, index in color_counts:
+        offset = index * 3
+        color = tuple(color_table[offset : offset + 3])
+        if len(color) != 3:
+            continue
+        red, green, blue = (channel / 255 for channel in color)
+        _hue, lightness, saturation = colorsys.rgb_to_hls(red, green, blue)
+        candidates.append((count, color, lightness, saturation, count / total))
+
+    if not candidates:
+        return CardPalette("#8b949e", "#c9d1d9", "avatar")
+
+    # A color must represent at least 1.5% of the sampled portrait to influence
+    # the chrome. This prevents isolated pixels, confetti, and compression noise
+    # from becoming the entire card palette.
+    supported = [candidate for candidate in candidates if candidate[4] >= 0.015]
+    if len(supported) < 2:
+        supported = candidates
+    midtones = [candidate for candidate in supported if 0.055 <= candidate[2] <= 0.945]
+    if midtones:
+        supported = midtones
+
+    def prominence(candidate: tuple[int, tuple[int, int, int], float, float, float]) -> float:
+        count, _color, lightness, saturation, _share = candidate
+        balanced_lightness = 0.55 + max(0.0, 1 - abs(lightness - 0.5) * 1.6)
+        return (count**0.65) * (0.4 + 1.8 * saturation) * balanced_lightness
+
+    primary_candidate = max(supported, key=prominence)
+    primary = primary_candidate[1]
+    secondary_candidate = max(
+        supported,
+        key=lambda candidate: prominence(candidate)
+        * (0.35 + 2.0 * color_distance(candidate[1], primary)),
+    )
+    secondary = secondary_candidate[1]
+
+    # Flat-color and nearly monochrome avatars still need a distinct second tone.
+    if color_distance(primary, secondary) < 0.12:
+        _hue, lightness, _saturation = colorsys.rgb_to_hls(
+            *(channel / 255 for channel in primary)
+        )
+        secondary = mix(primary, (255, 255, 255) if lightness < 0.58 else (0, 0, 0), 0.48)
+
+    return CardPalette(rgb_to_hex(primary), rgb_to_hex(secondary), "avatar")
+
+
+def resolve_card_palette(image: Image.Image, config: Mapping[str, Any]) -> CardPalette:
+    theme_config = config.get("theme") if isinstance(config.get("theme"), dict) else {}
+    accent = parse_hex(theme_config.get("accent"), "#8b949e")
+    accent_2 = parse_hex(theme_config.get("accent_2"), "#c9d1d9")
+    source = str(theme_config.get("palette") or "fixed").strip().lower()
+    if source == "avatar":
+        try:
+            return avatar_palette(image)
+        except Exception as exc:  # noqa: BLE001 - a fixed fallback keeps profile refreshes alive.
+            print(f"warning: avatar palette extraction failed; using fixed colors: {exc}", file=sys.stderr)
+            return CardPalette(accent, accent_2, "fallback")
+    return CardPalette(accent, accent_2, "fixed")
+
+
+def adapt_theme(theme: Theme, palette: CardPalette) -> tuple[Theme, str, str]:
+    """Tint the dark card from the portrait and enforce readable text accents."""
+    primary = hex_to_rgb(palette.accent)
+    secondary = hex_to_rgb(palette.accent_2)
+
+    page = _tone(primary, 0.065, 0.38, 0.16)
+    panel = _tone(primary, 0.105, 0.42, 0.18)
+    panel_alt = _tone(primary, 0.145, 0.5, 0.22)
+    border = _tone(primary, 0.30, 0.6, 0.34)
+    faint = _tone(primary, 0.235, 0.52, 0.28)
+    text = _tone(secondary, 0.93, 0.10, 0.07)
+
+    panel_rgb = hex_to_rgb(panel)
+    white = (255, 255, 255)
+    text_rgb = _ensure_contrast(hex_to_rgb(text), panel_rgb, 7.0, white)
+    accent_rgb = _ensure_contrast(primary, panel_rgb, 4.5, white)
+    accent_2_rgb = _ensure_contrast(secondary, panel_rgb, 4.5, white)
+    muted_seed = mix(primary, secondary, 0.58)
+    muted_rgb = _ensure_contrast(muted_seed, panel_rgb, 4.5, white)
+
+    adapted = Theme(
+        name=theme.name,
+        page=page,
+        panel=panel,
+        panel_alt=panel_alt,
+        border=border,
+        text=rgb_to_hex(text_rgb),
+        muted=rgb_to_hex(muted_rgb),
+        faint=faint,
+        label=rgb_to_hex(accent_2_rgb),
+        success=rgb_to_hex(accent_2_rgb),
+        warning=rgb_to_hex(mix(accent_rgb, accent_2_rgb, 0.5)),
+        danger=rgb_to_hex(accent_rgb),
+        shadow_opacity=theme.shadow_opacity,
+    )
+    return adapted, rgb_to_hex(accent_rgb), rgb_to_hex(accent_2_rgb)
+
+
 def fetch_avatar(
     profile: Mapping[str, Any],
     override_path: Path | None,
@@ -1353,17 +1503,16 @@ def render_svg(
     stats: Mapping[str, Any],
     config: Mapping[str, Any],
     avatar_uri: str,
+    palette: CardPalette | None = None,
 ) -> str:
-    theme_config = config.get("theme") if isinstance(config.get("theme"), dict) else {}
-    accent = parse_hex(theme_config.get("accent"), "#f97316")
-    accent_2 = parse_hex(theme_config.get("accent_2"), "#14b8a6")
-    if theme.name == "light":
-        accent = rgb_to_hex(mix(hex_to_rgb(accent), (20, 27, 40), 0.45))
-        accent_2 = rgb_to_hex(mix(hex_to_rgb(accent_2), (20, 27, 40), 0.23))
-    else:
-        accent_2 = rgb_to_hex(
-            mix(hex_to_rgb(accent_2), hex_to_rgb(theme.text), 0.25)
+    if palette is None:
+        theme_config = config.get("theme") if isinstance(config.get("theme"), dict) else {}
+        palette = CardPalette(
+            parse_hex(theme_config.get("accent"), "#8b949e"),
+            parse_hex(theme_config.get("accent_2"), "#c9d1d9"),
+            "fixed",
         )
+    theme, accent, accent_2 = adapt_theme(theme, palette)
 
     sections = [
         (
@@ -1420,7 +1569,7 @@ def render_svg(
     }
 
     parts: list[str] = [
-        f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-labelledby="title desc">
+        f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-labelledby="title desc" data-palette-source="{xml(palette.source)}" data-avatar-accent="{xml(palette.accent)}" data-avatar-accent-2="{xml(palette.accent_2)}">
 <title id="title">dynamic github profile card for @{xml(login)}</title>
 <desc id="desc">a terminal-style profile with the current full-color github avatar and refreshed public statistics.</desc>
 <defs>
@@ -1798,11 +1947,7 @@ def render_readme(
 
     login = xml(str(profile.get("login") or "github user").lower())
     return (
-        "<picture>\n"
-        '  <source media="(prefers-color-scheme: dark)" srcset="./assets/profile-terminal-dark.svg">\n'
-        '  <source media="(prefers-color-scheme: light)" srcset="./assets/profile-terminal-light.svg">\n'
-        f'  <img alt="@{login} profile card" src="./assets/profile-terminal-light.svg" width="100%">\n'
-        "</picture>\n\n"
+        f'<img alt="@{login} profile card" src="./assets/profile-terminal-dark.svg" width="100%">\n\n'
         "<details>\n"
         "<summary>copyable text version</summary>\n\n"
         f"```text\n{combined}\n```\n\n"
@@ -1909,21 +2054,21 @@ def main() -> int:
     avatar_cache_path = Path(configured_cache) if configured_cache else None
     avatar = fetch_avatar(profile, avatar_path, avatar_cache_path)
     embedded_avatar = avatar_data_uri(avatar)
+    palette = resolve_card_palette(avatar, config)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    dark_svg = render_svg(DARK, profile, stats, config, embedded_avatar)
-    light_svg = render_svg(LIGHT, profile, stats, config, embedded_avatar)
+    dark_svg = render_svg(DARK, profile, stats, config, embedded_avatar, palette)
     readme = render_readme(profile, stats, config)
 
     dark_changed = write_svg_if_meaningfully_changed(
         args.output_dir / "profile-terminal-dark.svg", dark_svg
     )
-    light_changed = write_svg_if_meaningfully_changed(
-        args.output_dir / "profile-terminal-light.svg", light_svg
-    )
+    obsolete_light_card = args.output_dir / "profile-terminal-light.svg"
+    light_removed = obsolete_light_card.exists()
+    obsolete_light_card.unlink(missing_ok=True)
     readme_changed = write_readme_if_meaningfully_changed(Path("README.md"), readme)
 
-    changed = dark_changed or light_changed or readme_changed
+    changed = dark_changed or light_removed or readme_changed
     state = "updated" if changed else "already current"
     print(f"Profile card for @{profile.get('login', username)} is {state} in {args.output_dir}")
     return 0

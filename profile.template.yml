@@ -7,7 +7,7 @@
 profile:
   # Optional: set the GitHub account to sync stats/avatar from.
   # Leave blank to use the repository owner.
-  github_username: ""
+  github_username: "aeiree"
 
   # Your headline role text
   card_title: "eri reilly"
@@ -98,7 +98,10 @@ display:
   avatar_cache_path: "assets/avatar.png"
 
 theme:
-  # Sampled from the current blue-gray profile portrait.
+  # avatar = sample supported portrait colors on every refresh.
+  # fixed = use the two fallback colors below without sampling.
+  palette: "avatar"
+  # Used when palette is fixed or avatar sampling ever fails.
   accent: "#a8b7d2"
   accent_2: "#68768c"
 

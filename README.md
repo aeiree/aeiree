@@ -1,8 +1,4 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./assets/profile-terminal-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="./assets/profile-terminal-light.svg">
-  <img alt="@aeiree profile card" src="./assets/profile-terminal-light.svg" width="100%">
-</picture>
+<img alt="@aeiree profile card" src="./assets/profile-terminal-dark.svg" width="100%">
 
 <details>
 <summary>copyable text version</summary>

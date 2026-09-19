@@ -139,16 +139,16 @@ def profile_fixture() -> tuple[dict[str, object], dict[str, object], dict[str, o
 
 
 class ReadmeRenderingTests(unittest.TestCase):
-    def test_readme_uses_theme_images_with_a_text_only_copyable_fallback(self) -> None:
+    def test_readme_uses_one_dark_image_with_a_text_only_copyable_fallback(self) -> None:
         profile, stats, config = profile_fixture()
 
         markdown = build_profile.render_readme(profile, stats, config)
         fallback = copyable_card(markdown)
 
-        self.assertTrue(markdown.startswith("<picture>\n"))
-        self.assertIn('media="(prefers-color-scheme: dark)"', markdown)
+        self.assertTrue(markdown.startswith('<img alt="@aeiree profile card"'))
         self.assertIn("./assets/profile-terminal-dark.svg", markdown)
-        self.assertIn("./assets/profile-terminal-light.svg", markdown)
+        self.assertNotIn("<picture>", markdown)
+        self.assertNotIn("profile-terminal-light.svg", markdown)
         self.assertIn("<summary>copyable text version</summary>", markdown)
         self.assertEqual(fallback, fallback.lower())
         self.assertNotRegex(fallback, "[\\u2800-\\u28ff]")
@@ -171,32 +171,97 @@ class ReadmeRenderingTests(unittest.TestCase):
 
 
 class AvatarRenderingTests(unittest.TestCase):
-    def test_card_palette_uses_the_avatar_blue_gray_colors(self) -> None:
+    def test_card_palette_adapts_to_the_avatar_colors(self) -> None:
         repository_root = Path(__file__).resolve().parents[1]
         config = yaml.safe_load(
             (repository_root / "profile.template.yml").read_text(encoding="utf-8")
         )
 
-        self.assertEqual("#a8b7d2", config["theme"]["accent"])
-        self.assertEqual("#68768c", config["theme"]["accent_2"])
-        self.assertEqual("#1b1b22", build_profile.DARK.page)
-        self.assertEqual("#292f3e", build_profile.DARK.panel_alt)
-        self.assertEqual("#a8b7d2", build_profile.DARK.label)
-        self.assertEqual("#eef2f7", build_profile.LIGHT.panel_alt)
-        self.assertEqual("#485364", build_profile.LIGHT.label)
+        self.assertEqual("avatar", config["theme"]["palette"])
+
+        blue_avatar = Image.new("RGB", (100, 100), "#243b67")
+        ImageDraw.Draw(blue_avatar).rectangle((55, 0, 99, 99), fill="#9eb9e8")
+        orange_avatar = Image.new("RGB", (100, 100), "#6f2f12")
+        ImageDraw.Draw(orange_avatar).rectangle((55, 0, 99, 99), fill="#f4ad45")
+
+        blue_palette = build_profile.resolve_card_palette(blue_avatar, config)
+        orange_palette = build_profile.resolve_card_palette(orange_avatar, config)
+
+        self.assertEqual("avatar", blue_palette.source)
+        self.assertEqual("avatar", orange_palette.source)
+        self.assertNotEqual(blue_palette, orange_palette)
+        self.assertGreater(
+            build_profile.color_distance(
+                build_profile.hex_to_rgb(blue_palette.accent),
+                build_profile.hex_to_rgb(orange_palette.accent),
+            ),
+            0.2,
+        )
+        blue_theme, _blue_accent, _blue_accent_2 = build_profile.adapt_theme(
+            build_profile.DARK, blue_palette
+        )
+        orange_theme, _orange_accent, _orange_accent_2 = build_profile.adapt_theme(
+            build_profile.DARK, orange_palette
+        )
+        self.assertNotEqual(blue_theme.panel, orange_theme.panel)
+        self.assertNotEqual(blue_theme.border, orange_theme.border)
 
         profile, stats, _fixture_config = profile_fixture()
-        avatar_uri = build_profile.avatar_data_uri(Image.new("RGB", (8, 8), "red"))
+        avatar_uri = build_profile.avatar_data_uri(orange_avatar)
         dark_svg = build_profile.render_svg(
-            build_profile.DARK, profile, stats, config, avatar_uri
-        )
-        light_svg = build_profile.render_svg(
-            build_profile.LIGHT, profile, stats, config, avatar_uri
+            build_profile.DARK, profile, stats, config, avatar_uri, orange_palette
         )
 
-        self.assertIn("#8491a6", dark_svg)
-        self.assertIn("#657186", light_svg)
-        self.assertIn("#556175", light_svg)
+        self.assertIn('data-palette-source="avatar"', dark_svg)
+        self.assertIn(f'data-avatar-accent="{orange_palette.accent}"', dark_svg)
+        self.assertIn(f'data-avatar-accent-2="{orange_palette.accent_2}"', dark_svg)
+
+    def test_avatar_palette_ignores_tiny_color_speckles(self) -> None:
+        avatar = Image.new("RGB", (100, 100), "#33445f")
+        draw = ImageDraw.Draw(avatar)
+        draw.rectangle((50, 0, 99, 99), fill="#a8b8d3")
+        draw.point((2, 2), fill="#ff0000")
+        draw.point((97, 2), fill="#00ff00")
+        draw.point((2, 97), fill="#0000ff")
+
+        palette = build_profile.avatar_palette(avatar)
+
+        for color in (palette.accent, palette.accent_2):
+            red, green, blue = build_profile.hex_to_rgb(color)
+            self.assertLess(max(red, green, blue) - min(red, green, blue), 150)
+
+    def test_adaptive_palette_keeps_text_accents_readable(self) -> None:
+        for fill in ("#050505", "#f8f8f8", "#ff00aa", "#00d85a"):
+            palette = build_profile.avatar_palette(Image.new("RGB", (32, 32), fill))
+            dark_theme, dark_accent, dark_accent_2 = build_profile.adapt_theme(
+                build_profile.DARK, palette
+            )
+
+            self.assertGreaterEqual(
+                build_profile.contrast_ratio(
+                    build_profile.hex_to_rgb(dark_accent),
+                    build_profile.hex_to_rgb(dark_theme.panel),
+                ),
+                4.5,
+            )
+            self.assertGreaterEqual(
+                build_profile.contrast_ratio(
+                    build_profile.hex_to_rgb(dark_accent_2),
+                    build_profile.hex_to_rgb(dark_theme.panel),
+                ),
+                4.5,
+            )
+
+    def test_fixed_palette_remains_available_as_an_opt_out(self) -> None:
+        config = {"theme": {"palette": "fixed", "accent": "#cc4400", "accent_2": "#0066bb"}}
+
+        palette = build_profile.resolve_card_palette(
+            Image.new("RGB", (32, 32), "#00ff00"), config
+        )
+
+        self.assertEqual("fixed", palette.source)
+        self.assertEqual("#cc4400", palette.accent)
+        self.assertEqual("#0066bb", palette.accent_2)
 
     def test_generator_embeds_the_full_color_avatar_in_the_svg(self) -> None:
         repository_root = Path(__file__).resolve().parents[1]
@@ -238,6 +303,7 @@ class AvatarRenderingTests(unittest.TestCase):
             self.assertEqual((0, 0, 255), embedded.getpixel((7, 0))[:3])
             self.assertNotIn('class="ascii"', svg)
             self.assertFalse((temporary_root / "assets/avatar-ascii.txt").exists())
+            self.assertFalse((temporary_root / "assets/profile-terminal-light.svg").exists())
 
     def test_svg_gives_the_expanded_profile_and_portrait_room_to_render(self) -> None:
         profile, stats, config = profile_fixture()

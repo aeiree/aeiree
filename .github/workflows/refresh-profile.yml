@@ -91,12 +91,7 @@ jobs:
           branch="${GITHUB_REF_NAME:-main}"
 
           add_assets() {
-            git add \
-              README.md \
-              assets/avatar.png \
-              assets/github-stats-cache.json \
-              assets/profile-terminal-dark.svg \
-              assets/profile-terminal-light.svg
+            git add README.md assets
           }
 
           regenerate_from_latest() {
