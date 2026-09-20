@@ -1477,10 +1477,6 @@ def github_rows(profile: Mapping[str, Any], stats: Mapping[str, Any], config: Ma
         ),
         ("lines of code", format_number(stats.get("lines_of_code")) or "live sync pending", "text"),
     ]
-    if stats.get("includes_private"):
-        rows.append(("scope", "public + private", "accent2"))
-    else:
-        rows.append(("scope", "public", "text"))
     return [(label, value, color) for label, value, color in rows if value]
 
 
@@ -1879,11 +1875,11 @@ def _terminal_info_lines(
         )
         section_map["github stats"] = _pick_rows(
             section_map.get("github stats", []),
-            {"repositories", "commits", "+ / -", "lines of code", "scope"},
+            {"repositories", "commits", "+ / -", "lines of code"},
         )
         section_map["public github stats"] = _pick_rows(
             section_map.get("public github stats", section_map.get("github stats", [])),
-            {"repositories", "commits", "+ / -", "lines of code", "scope"},
+            {"repositories", "commits", "+ / -", "lines of code"},
         )
 
     contact_rows: list[tuple[str, str, str]] = []

@@ -169,6 +169,21 @@ class ReadmeRenderingTests(unittest.TestCase):
         self.assertIn("woe = sap-connected ordering · web / ios / android", fallback)
         self.assertNotIn("email =", fallback)
 
+    def test_profile_template_omits_scope_and_current_systems(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        config = yaml.safe_load(
+            (repository_root / "profile.template.yml").read_text(encoding="utf-8")
+        )
+        profile, stats, _fixture_config = profile_fixture()
+        avatar_uri = build_profile.avatar_data_uri(Image.new("RGB", (8, 8), "red"))
+
+        markdown = build_profile.render_readme(profile, stats, config)
+        svg = build_profile.render_svg(build_profile.DARK, profile, stats, config, avatar_uri)
+
+        self.assertNotIn("[current systems]", markdown.lower())
+        self.assertNotIn("current systems", svg.lower())
+        self.assertNotIn(">scope<", svg.lower())
+
 
 class AvatarRenderingTests(unittest.TestCase):
     def test_card_palette_adapts_to_the_avatar_colors(self) -> None:

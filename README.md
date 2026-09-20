@@ -21,11 +21,6 @@
 | testing = jest · supertest · playwright · appium                     |
 | platforms = sap · firebase · github · gitlab · jira · new relic      |
 | - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  |
-| [current systems]                                                    |
-| woe = sap-connected ordering · web / ios / android                   |
-| wilbur = internal rag assistant · secure ai workbench                |
-| atp = geospatial social platform · react native / postgis            |
-| - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  |
 | [public github stats]                                                |
 | repositories = 1                                                     |
 | commits = 330                                                        |

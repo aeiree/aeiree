@@ -48,7 +48,7 @@ Manual values (you edit in profile.template.yml):
 
 Automatic values (cron updates these during each run):
 
-- GitHub stats (repositories, commits, + / - line churn, lines of code, scope)
+- GitHub stats (repositories, commits, + / - line churn, and lines of code)
 - next scheduled slot timestamp
 - timezone suffix details (EST/EDT and UTC offset)
 - embedded full-color avatar and SVG assets
